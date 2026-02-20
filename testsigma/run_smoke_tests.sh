@@ -20,8 +20,8 @@
 # For example, we are using $(date +"%Y%m%d%H%M") to use current data and time as build number.
 #
 #********START USER_INPUTS*********
-TESTSIGMA_API_KEY=eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxMDM5ZDE0NC0zOWM0LTQ2MGMtODVkOS0zNjU1MDkxNjI4OWQiLCJkb21haW4iOiJ0ZXN0c2lnbWF0ZWNoLmNvbSIsInRlbmFudElkIjoyODE3fQ.lpw5KELasebWomb0llXQmxpZuCII-82VPwqzDO63xC7sYunu7vAG5KQNfkX6-JuuQxyIjHM96n_bU5GZz3t8tA
-TESTSIGMA_TEST_PLAN_ID=802
+TESTSIGMA_API_KEY=eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiJjMzdlZDk0OC00YWJmLTQyNjctODhjNy04NDQ1NDc1M2Q5NjEiLCJkb21haW4iOiJhbHRlZ3JhLnNlIiwidGVuYW50SWQiOjY3NDE3LCJpc0lkbGVUaW1lb3V0Q29uZmlndXJlZCI6ZmFsc2V9.73ooUztyz8ucmkhg98tl96uUcCiJozvbqg1otZJ3h6kQdu4yRpt_PqGvtEWldFw-T6HcUQQnUqSdlDmn9lamcQ
+TESTSIGMA_TEST_PLAN_ID=403
 MAX_WAIT_TIME_FOR_SCRIPT_TO_EXIT=10
 JUNIT_REPORT_FILE_PATH=./junit-report-$(date +"%Y%m%d%H%M").xml
 RUNTIME_DATA_INPUT="url=https://the-internet.herokuapp.com/login,test=1221"
