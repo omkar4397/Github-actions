@@ -1,0 +1,134 @@
+# ============================================================
+# Azure DevOps Pipeline — Testsigma CI/CD Integration
+# ------------------------------------------------------------
+# SECRETS REQUIRED (set in ADO Pipeline → Variables, mark as secret):
+#   TESTSIGMA_API_KEY   → Your Testsigma API key
+#   TESTSIGMA_PLAN_ID   → Your Testsigma Test Plan ID
+# ============================================================
+
+trigger:
+  branches:
+    include:
+      - main          # Triggers on every push to main
+  paths:
+    exclude:
+      - README.md     # Skip pipeline for doc-only changes
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  # Non-secret variables (safe to be visible)
+  TESTSIGMA_API_URL: 'https://app.testsigma.com/api/v1'
+  POLL_INTERVAL_SECONDS: 30
+  MAX_WAIT_MINUTES: 30
+
+stages:
+
+  # ── Stage 1: Build ─────────────────────────────────────────
+  - stage: Build
+    displayName: 'Build'
+    jobs:
+      - job: BuildJob
+        displayName: 'Build Application'
+        steps:
+          - checkout: self
+
+          - script: |
+              echo "✅ Source checked out from GitHub"
+              echo "Branch: $(Build.SourceBranchName)"
+              echo "Commit: $(Build.SourceVersion)"
+              # Replace this block with your actual build commands
+              # e.g. npm install && npm run build
+            displayName: 'Build Steps'
+
+  # ── Stage 2: Testsigma Test Execution ──────────────────────
+  - stage: Test
+    displayName: 'Testsigma Test Execution'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - job: RunTestsigma
+        displayName: 'Trigger & Monitor Testsigma Test Plan'
+        timeoutInMinutes: 45
+        steps:
+
+          # Step 1 — Trigger the test plan execution
+          - bash: |
+              echo "🚀 Triggering Testsigma Test Plan ID: $(TESTSIGMA_PLAN_ID)"
+
+              RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+                "$(TESTSIGMA_API_URL)/test_plan_executions" \
+                -H "Authorization: Bearer $(TESTSIGMA_API_KEY)" \
+                -H "Content-Type: application/json" \
+                -d "{\"testPlanId\": $(TESTSIGMA_PLAN_ID)}")
+
+              HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+              BODY=$(echo "$RESPONSE" | head -n -1)
+
+              echo "HTTP Status: $HTTP_CODE"
+
+              if [ "$HTTP_CODE" != "200" ] && [ "$HTTP_CODE" != "201" ]; then
+                echo "❌ Failed to trigger test plan. HTTP $HTTP_CODE"
+                echo "Response: $BODY"
+                exit 1
+              fi
+
+              RUN_ID=$(echo "$BODY" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+              echo "✅ Test run triggered. Run ID: $RUN_ID"
+
+              # Pass Run ID to the next step via ADO output variable
+              echo "##vso[task.setvariable variable=RUN_ID]$RUN_ID"
+            displayName: 'Trigger Test Plan'
+            env:
+              TESTSIGMA_API_KEY: $(TESTSIGMA_API_KEY)   # Injected from secret variable
+              TESTSIGMA_PLAN_ID: $(TESTSIGMA_PLAN_ID)   # Injected from secret variable
+
+          # Step 2 — Poll for results until completion or timeout
+          - bash: |
+              echo "⏳ Polling for test results (Run ID: $RUN_ID)"
+              echo "   Interval: $(POLL_INTERVAL_SECONDS)s | Timeout: $(MAX_WAIT_MINUTES) mins"
+
+              MAX_ITERATIONS=$(( $(MAX_WAIT_MINUTES) * 60 / $(POLL_INTERVAL_SECONDS) ))
+              ITERATION=0
+
+              while [ $ITERATION -lt $MAX_ITERATIONS ]; do
+                ITERATION=$((ITERATION + 1))
+
+                RESPONSE=$(curl -s -X GET \
+                  "$(TESTSIGMA_API_URL)/test_plan_executions/$RUN_ID" \
+                  -H "Authorization: Bearer $(TESTSIGMA_API_KEY)")
+
+                STATUS=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','UNKNOWN'))")
+
+                echo "[Poll $ITERATION/$MAX_ITERATIONS] Status: $STATUS"
+
+                case "$STATUS" in
+                  "SUCCESS")
+                    echo "✅ Tests PASSED!"
+                    exit 0
+                    ;;
+                  "FAILURE")
+                    echo "❌ Tests FAILED!"
+                    exit 1
+                    ;;
+                  "STOPPED"|"ABORT")
+                    echo "⚠️  Test run was stopped or aborted."
+                    exit 1
+                    ;;
+                  "RUNNING"|"QUEUED"|"PRE_FLIGHT")
+                    sleep $(POLL_INTERVAL_SECONDS)
+                    ;;
+                  *)
+                    echo "⚠️  Unknown status '$STATUS'. Continuing to poll..."
+                    sleep $(POLL_INTERVAL_SECONDS)
+                    ;;
+                esac
+              done
+
+              echo "❌ Timed out after $(MAX_WAIT_MINUTES) minutes."
+              exit 1
+            displayName: 'Poll Test Results'
+            env:
+              TESTSIGMA_API_KEY: $(TESTSIGMA_API_KEY)   # Injected from secret variable
+              RUN_ID: $(RUN_ID)
